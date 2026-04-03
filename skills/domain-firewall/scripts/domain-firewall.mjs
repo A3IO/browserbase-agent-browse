@@ -285,7 +285,7 @@ async function main() {
     }
 
     // Pass through internal URLs
-    if (url.startsWith("chrome") || url.startsWith("about:") || url.startsWith("data:")) {
+    if (url.startsWith("chrome") || url.startsWith("about:")) {
       await sendCDP("Fetch.continueRequest", { requestId: params.requestId });
       return;
     }

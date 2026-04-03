@@ -149,7 +149,7 @@ JSON mode (`--json`):
 3. Sends `Fetch.enable` with `urlPattern: "*"` to intercept all network requests
 4. On every `Fetch.requestPaused` event:
    - Non-Document resources (images, CSS, JS) pass through immediately
-   - Internal URLs (chrome://, about://, data:) pass through
+   - Internal URLs (chrome://, about://) pass through; `data:` URLs are evaluated by policy
    - The domain is extracted and normalized (strip `www.`, lowercase)
    - Denylist is checked first — if the domain is listed, the request is blocked
    - Allowlist is checked next — if the domain is listed, the request is allowed
