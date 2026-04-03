@@ -14,7 +14,7 @@
  *   BROWSERBASE_API_KEY    Required for session debug URL lookup
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import WebSocket from "ws";
 
 // =============================================================================
@@ -137,7 +137,7 @@ function evaluate(domain, opts) {
 
 function getCDPUrl(sessionId) {
   try {
-    const raw = execSync(`bb sessions debug ${sessionId}`, {
+    const raw = execFileSync("bb", ["sessions", "debug", sessionId], {
       encoding: "utf-8",
       timeout: 15000,
       stdio: ["pipe", "pipe", "pipe"],
