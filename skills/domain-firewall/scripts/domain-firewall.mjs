@@ -288,12 +288,18 @@ async function main() {
       return;
     }
 
-    // Extract domain
+    // Extract domain — fail-closed on parse error
     let domain;
     try {
       domain = normalizeDomain(new URL(url).hostname);
     } catch {
-      await sendCDP("Fetch.continueRequest", { requestId: params.requestId });
+      await sendCDP("Fetch.failRequest", {
+        requestId: params.requestId,
+        errorReason: "BlockedByClient",
+      });
+      if (!opts.quiet) {
+        console.log(`[${ts()}] BLOCKED (unparseable URL)`);
+      }
       return;
     }
 
