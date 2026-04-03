@@ -185,8 +185,8 @@ function createCDPClient(ws) {
     send(method, params = {}) {
       const id = client._nextId++;
       ws.send(JSON.stringify({ id, method, params }));
-      return new Promise((resolve) => {
-        client._pending.set(id, resolve);
+      return new Promise((resolve, reject) => {
+        client._pending.set(id, { resolve, reject });
       });
     },
   };
@@ -194,8 +194,13 @@ function createCDPClient(ws) {
   ws.on("message", (raw) => {
     const msg = JSON.parse(raw.toString());
     if (msg.id && client._pending.has(msg.id)) {
-      client._pending.get(msg.id)(msg.result || msg.error);
+      const { resolve, reject } = client._pending.get(msg.id);
       client._pending.delete(msg.id);
+      if (msg.error) {
+        reject(new Error(`CDP ${msg.error.message || JSON.stringify(msg.error)}`));
+      } else {
+        resolve(msg.result);
+      }
     }
   });
 
@@ -234,14 +239,20 @@ async function main() {
   if (wsUrl.includes("/devtools/browser/")) {
     const targets = await cdp.send("Target.getTargets");
     const page = targets?.targetInfos?.find((t) => t.type === "page");
-    if (page) {
-      const attached = await cdp.send("Target.attachToTarget", {
-        targetId: page.targetId,
-        flatten: true,
-      });
-      cdpSessionId = attached.sessionId;
-      console.error(`[firewall] Attached to page target.`);
+    if (!page) {
+      console.error("[firewall] Fatal: no page target found in browser.");
+      process.exit(1);
     }
+    const attached = await cdp.send("Target.attachToTarget", {
+      targetId: page.targetId,
+      flatten: true,
+    });
+    if (!attached?.sessionId) {
+      console.error("[firewall] Fatal: failed to attach to page target.");
+      process.exit(1);
+    }
+    cdpSessionId = attached.sessionId;
+    console.error(`[firewall] Attached to page target.`);
   }
 
   // Wrap cdp.send to include sessionId when attached via browser target
@@ -249,7 +260,7 @@ async function main() {
     if (cdpSessionId) {
       const id = cdp._nextId++;
       ws.send(JSON.stringify({ id, method, params, sessionId: cdpSessionId }));
-      return new Promise((resolve) => cdp._pending.set(id, resolve));
+      return new Promise((resolve, reject) => cdp._pending.set(id, { resolve, reject }));
     }
     return cdp.send(method, params);
   };
@@ -262,7 +273,6 @@ async function main() {
     console.error(`[firewall] Denylist: ${opts.denylist.join(", ")}`);
   }
   console.error(`[firewall] Default: ${opts.defaultVerdict}`);
-  console.error(`[firewall] Listening for navigations...\n`);
 
   // 3. Register handler BEFORE enabling Fetch to avoid missing events
   //    that arrive in the same TCP chunk as the Fetch.enable response
@@ -350,6 +360,7 @@ async function main() {
 
   // 4. Enable Fetch interception (after handler is registered)
   await sendCDP("Fetch.enable", { patterns: [{ urlPattern: "*" }] });
+  console.error(`[firewall] Listening for navigations...\n`);
 
   // 5. Graceful shutdown
   const cleanup = async () => {
