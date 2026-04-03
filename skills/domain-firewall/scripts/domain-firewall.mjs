@@ -264,10 +264,8 @@ async function main() {
   console.error(`[firewall] Default: ${opts.defaultVerdict}`);
   console.error(`[firewall] Listening for navigations...\n`);
 
-  // 3. Enable Fetch interception
-  await sendCDP("Fetch.enable", { patterns: [{ urlPattern: "*" }] });
-
-  // 4. Handle intercepted requests
+  // 3. Register handler BEFORE enabling Fetch to avoid missing events
+  //    that arrive in the same TCP chunk as the Fetch.enable response
   ws.on("message", async (raw) => {
     const msg = JSON.parse(raw.toString());
     // Match events from our attached session or direct page connection
@@ -343,6 +341,9 @@ async function main() {
       }
     }
   });
+
+  // 4. Enable Fetch interception (after handler is registered)
+  await sendCDP("Fetch.enable", { patterns: [{ urlPattern: "*" }] });
 
   // 5. Graceful shutdown
   const cleanup = async () => {
