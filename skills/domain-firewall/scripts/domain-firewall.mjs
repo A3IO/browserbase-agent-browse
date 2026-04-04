@@ -26,6 +26,8 @@ function parseArgs() {
   const opts = {
     sessionId: null,
     cdpUrl: null,
+    create: false,
+    projectId: null,
     allowlist: [],
     denylist: [],
     defaultVerdict: "deny",
@@ -40,6 +42,12 @@ function parseArgs() {
         break;
       case "--cdp-url":
         opts.cdpUrl = args[++i];
+        break;
+      case "--create":
+        opts.create = true;
+        break;
+      case "--project-id":
+        opts.projectId = args[++i];
         break;
       case "--allowlist":
         opts.allowlist = args[++i].split(",").map((d) => normalizeDomain(d.trim()));
@@ -62,11 +70,14 @@ function parseArgs() {
 domain-firewall — Protect a browser session with domain policies
 
 Usage:
+  node domain-firewall.mjs --create --allowlist "example.com" [options]
   node domain-firewall.mjs --session-id <id> [options]
   node domain-firewall.mjs --cdp-url <ws://...> [options]
 
 Options:
-  --session-id <id>      Browserbase session ID
+  --create               Create a new Browserbase session with firewall
+  --project-id <id>      Project ID for --create (or BROWSERBASE_PROJECT_ID)
+  --session-id <id>      Attach to an existing Browserbase session
   --cdp-url <url>        Direct CDP WebSocket URL (for local Chrome)
   --allowlist <domains>  Comma-separated allowed domains
   --denylist <domains>   Comma-separated denied domains
@@ -76,14 +87,15 @@ Options:
   --help                 Show this help
 
 Environment:
-  BROWSERBASE_API_KEY    Required when using --session-id
+  BROWSERBASE_API_KEY    Required when using --create or --session-id
+  BROWSERBASE_PROJECT_ID Used by --create if --project-id not specified
 `);
         process.exit(0);
     }
   }
 
-  if (!opts.sessionId && !opts.cdpUrl) {
-    console.error("[firewall] Error: --session-id or --cdp-url is required");
+  if (!opts.sessionId && !opts.cdpUrl && !opts.create) {
+    console.error("[firewall] Error: --create, --session-id, or --cdp-url is required");
     process.exit(1);
   }
 
@@ -129,6 +141,47 @@ function evaluate(domain, opts) {
     action: opts.defaultVerdict === "allow" ? "ALLOWED" : "BLOCKED",
     policy: "default",
   };
+}
+
+// =============================================================================
+// Session creation
+// =============================================================================
+
+function createBBSession(projectId) {
+  let pid = projectId || process.env.BROWSERBASE_PROJECT_ID;
+  if (!pid) {
+    // Auto-detect from bb projects list
+    try {
+      const raw = execFileSync("bb", ["projects", "list"], {
+        encoding: "utf-8",
+        timeout: 15000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const projects = JSON.parse(raw.trim());
+      if (Array.isArray(projects) && projects.length > 0) {
+        pid = projects[0].id;
+      }
+    } catch {}
+  }
+  if (!pid) {
+    console.error("[firewall] Error: --project-id or BROWSERBASE_PROJECT_ID required for --create");
+    process.exit(1);
+  }
+  try {
+    const body = JSON.stringify({ projectId: pid, keepAlive: true });
+    const raw = execFileSync("bb", ["sessions", "create", "--body", body], {
+      encoding: "utf-8",
+      timeout: 30000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const data = JSON.parse(raw.trim());
+    if (!data.id) throw new Error("No session ID in response");
+    return data.id;
+  } catch (e) {
+    console.error("[firewall] Failed to create session.");
+    console.error(`[firewall] ${e.message}`);
+    process.exit(1);
+  }
 }
 
 // =============================================================================
@@ -224,6 +277,16 @@ async function main() {
       console.error("[firewall] Error: BROWSERBASE_API_KEY not set.");
       process.exit(1);
     }
+
+    // Create a new session if requested
+    if (opts.create) {
+      const sessionId = createBBSession(opts.projectId);
+      opts.sessionId = sessionId;
+      // Print session ID to stdout so agents/scripts can capture it
+      console.log(sessionId);
+      console.error(`[firewall] Created session ${sessionId}`);
+    }
+
     console.error(`[firewall] Connecting to session ${opts.sessionId}...`);
     wsUrl = getCDPUrl(opts.sessionId);
   }
