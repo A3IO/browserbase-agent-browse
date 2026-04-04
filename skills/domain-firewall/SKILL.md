@@ -19,7 +19,14 @@ Protect any Browserbase or local Chrome session from unauthorized navigations. O
 ## Quick Start
 
 ```bash
-# Browserbase session
+# Create a new protected session (recommended — one command)
+node skills/domain-firewall/scripts/domain-firewall.mjs \
+  --create \
+  --allowlist "docs.stripe.com,stripe.com,github.com" \
+  --default deny
+# → prints session ID to stdout, stays running with firewall active
+
+# Attach to an existing Browserbase session
 node skills/domain-firewall/scripts/domain-firewall.mjs \
   --session-id <session-id> \
   --allowlist "docs.stripe.com,stripe.com,github.com" \
@@ -52,22 +59,19 @@ The domain firewall operates at the **protocol level** — below the browser eng
 The typical workflow for a coding agent using the `browse` CLI:
 
 ```bash
-# 1. Create a Browserbase session
-bb sessions create --body '{"projectId":"...","keepAlive":true}'
-# → returns session ID
-
-# 2. Enable the firewall (runs in background)
+# 1. Create a protected session (one command)
 node skills/domain-firewall/scripts/domain-firewall.mjs \
-  --session-id <id> \
+  --create \
   --allowlist "docs.stripe.com,stripe.com" \
   --default deny &
+# → prints session ID to stdout, e.g. 083988e1-91db-417a-a205-a9edcf8e11e7
 
-# 3. Browse normally — firewall is transparent
+# 2. Browse normally — firewall is transparent
 browse open https://docs.stripe.com --session-id <id>
 browse snapshot
 # ... agent works normally ...
 
-# 4. If the agent or page tries to navigate to an unlisted domain → BLOCKED
+# 3. If the agent or page tries to navigate to an unlisted domain → BLOCKED
 #    Firewall logs the decision to stderr in real-time:
 #    [14:30:05] BLOCKED  evil.com  (default)
 ```
@@ -78,11 +82,14 @@ browse snapshot
 domain-firewall.mjs — Protect a browser session with domain policies
 
 Usage:
+  node domain-firewall.mjs --create --allowlist "example.com" [options]
   node domain-firewall.mjs --session-id <id> [options]
   node domain-firewall.mjs --cdp-url <ws://...> [options]
 
 Options:
-  --session-id <id>      Browserbase session ID
+  --create               Create a new Browserbase session with firewall
+  --project-id <id>      Project ID for --create (or BROWSERBASE_PROJECT_ID)
+  --session-id <id>      Attach to an existing Browserbase session
   --cdp-url <url>        Direct CDP WebSocket URL (local Chrome)
   --allowlist <domains>  Comma-separated allowed domains
   --denylist <domains>   Comma-separated denied domains
@@ -92,7 +99,8 @@ Options:
   --help                 Show help
 
 Environment:
-  BROWSERBASE_API_KEY    Required when using --session-id
+  BROWSERBASE_API_KEY    Required when using --create or --session-id
+  BROWSERBASE_PROJECT_ID Used by --create if --project-id not specified
 ```
 
 ### Getting the CDP URL

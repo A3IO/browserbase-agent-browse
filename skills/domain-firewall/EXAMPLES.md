@@ -118,19 +118,24 @@ cat firewall.log | jq 'select(.action == "BLOCKED")'
 cat firewall.log | jq -r 'select(.action == "BLOCKED") | .domain' | sort | uniq -c | sort -rn
 ```
 
-### Protect a browse CLI session
+### Protect a browse CLI session (one command)
 
 ```bash
-# Create session
-SESSION_ID=$(bb sessions create --body '{"projectId":"...","keepAlive":true}' | jq -r .id)
-
-# Enable firewall in background
-node domain-firewall.mjs --session-id $SESSION_ID \
+# Create a protected session — prints session ID to stdout
+node domain-firewall.mjs --create \
   --allowlist "docs.stripe.com,stripe.com" --default deny &
+# → 083988e1-91db-417a-a205-a9edcf8e11e7
 
 # Browse normally — firewall is transparent
-browse open https://docs.stripe.com --session-id $SESSION_ID
+browse open https://docs.stripe.com --session-id 083988e1-...
 browse snapshot
+```
+
+Or with an existing session:
+
+```bash
+node domain-firewall.mjs --session-id $SESSION_ID \
+  --allowlist "docs.stripe.com,stripe.com" --default deny &
 ```
 
 ### Local Chrome testing
