@@ -432,6 +432,17 @@ async function main() {
       await sendCDP("Fetch.disable");
     } catch {}
     ws.close();
+    // If we created the session, release it
+    if (opts.create && opts.sessionId) {
+      try {
+        execFileSync("bb", ["sessions", "update", opts.sessionId, "--status", "REQUEST_RELEASE"], {
+          encoding: "utf-8",
+          timeout: 10000,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        console.error(`[firewall] Released session ${opts.sessionId}`);
+      } catch {}
+    }
     process.exit(0);
   };
 
