@@ -99,6 +99,11 @@ Environment:
     process.exit(1);
   }
 
+  if (opts.defaultVerdict !== "allow" && opts.defaultVerdict !== "deny") {
+    console.error(`[firewall] Error: --default must be "allow" or "deny", got "${opts.defaultVerdict}"`);
+    process.exit(1);
+  }
+
   return opts;
 }
 
@@ -340,53 +345,49 @@ async function main() {
   // 3. Register handler BEFORE enabling Fetch to avoid missing events
   //    that arrive in the same TCP chunk as the Fetch.enable response
   ws.on("message", async (raw) => {
-    const msg = JSON.parse(raw.toString());
-    // Match events from our attached session or direct page connection
-    if (msg.method !== "Fetch.requestPaused") return;
-    if (cdpSessionId && msg.sessionId !== cdpSessionId) return;
-
-    const params = msg.params;
-    const url = params.request?.url || "";
-    const resourceType = params.resourceType || "";
-
-    // Pass through non-Document resources
-    if (resourceType !== "Document" && resourceType !== "") {
-      await sendCDP("Fetch.continueRequest", { requestId: params.requestId });
-      return;
-    }
-
-    // Pass through internal URLs
-    if (url.startsWith("chrome") || url.startsWith("about:")) {
-      await sendCDP("Fetch.continueRequest", { requestId: params.requestId });
-      return;
-    }
-
-    // Extract domain — fail-closed on parse error
-    let domain;
+    let requestId;
     try {
-      domain = normalizeDomain(new URL(url).hostname);
-    } catch {
-      await sendCDP("Fetch.failRequest", {
-        requestId: params.requestId,
-        errorReason: "BlockedByClient",
-      });
-      if (!opts.quiet) {
-        console.log(`[${ts()}] BLOCKED (unparseable URL)`);
+      const msg = JSON.parse(raw.toString());
+      // Match events from our attached session or direct page connection
+      if (msg.method !== "Fetch.requestPaused") return;
+      if (cdpSessionId && msg.sessionId !== cdpSessionId) return;
+
+      const params = msg.params;
+      requestId = params.requestId;
+      const url = params.request?.url || "";
+      const resourceType = params.resourceType || "";
+
+      // Pass through non-Document resources
+      if (resourceType !== "Document" && resourceType !== "") {
+        await sendCDP("Fetch.continueRequest", { requestId });
+        return;
       }
-      return;
-    }
 
-    // Evaluate policy
-    try {
+      // Pass through internal URLs
+      if (url.startsWith("chrome") || url.startsWith("about:")) {
+        await sendCDP("Fetch.continueRequest", { requestId });
+        return;
+      }
+
+      // Extract domain — fail-closed on parse error
+      let domain;
+      try {
+        domain = normalizeDomain(new URL(url).hostname);
+      } catch {
+        await sendCDP("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" });
+        if (!opts.quiet) {
+          console.log(`[${ts()}] BLOCKED (unparseable URL)`);
+        }
+        return;
+      }
+
+      // Evaluate policy
       const result = evaluate(domain, opts);
 
       if (result.action === "ALLOWED") {
-        await sendCDP("Fetch.continueRequest", { requestId: params.requestId });
+        await sendCDP("Fetch.continueRequest", { requestId });
       } else {
-        await sendCDP("Fetch.failRequest", {
-          requestId: params.requestId,
-          errorReason: "BlockedByClient",
-        });
+        await sendCDP("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" });
       }
 
       // Log
@@ -410,14 +411,13 @@ async function main() {
         }
       }
     } catch (err) {
-      // Fail-closed: deny on error to avoid hanging the browser
-      await sendCDP("Fetch.failRequest", {
-        requestId: params.requestId,
-        errorReason: "BlockedByClient",
-      });
-      if (!opts.quiet) {
-        console.log(`[${ts()}] BLOCKED ${domain.padEnd(30)} (error: ${err.message})`);
+      // Last-resort: try to unblock the request so the browser doesn't hang
+      if (requestId) {
+        try {
+          await sendCDP("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" });
+        } catch {}
       }
+      console.error(`[firewall] Handler error: ${err.message}`);
     }
   });
 
