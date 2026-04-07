@@ -139,7 +139,7 @@ async function installDomainFirewall(
 function allowlist(domains: string[]): FirewallPolicy
 ```
 
-Returns `"allow"` if the normalized domain is in the list, `"abstain"` otherwise. Domains are normalized (stripped of `www.`, lowercased) on construction.
+Returns `"allow"` if the domain is in the list, `"abstain"` otherwise. Domains are lowercased on construction.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
