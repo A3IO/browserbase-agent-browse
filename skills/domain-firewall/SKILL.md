@@ -19,20 +19,17 @@ Protect any Browserbase or local Chrome session from unauthorized navigations. O
 ## Quick Start
 
 ```bash
-# Create a new protected session (recommended — one command)
-node skills/domain-firewall/scripts/domain-firewall.mjs \
-  --create \
-  --allowlist "docs.stripe.com,stripe.com,github.com" \
-  --default deny
-# → prints session ID to stdout, stays running with firewall active
+# 1. Create a Browserbase session
+bb sessions create --body '{"projectId":"...","keepAlive":true}'
+# → returns session ID
 
-# Attach to an existing Browserbase session
+# 2. Attach the firewall
 node skills/domain-firewall/scripts/domain-firewall.mjs \
   --session-id <session-id> \
   --allowlist "docs.stripe.com,stripe.com,github.com" \
   --default deny
 
-# Local Chrome (with --remote-debugging-port=9222)
+# Or for local Chrome (with --remote-debugging-port=9222):
 node skills/domain-firewall/scripts/domain-firewall.mjs \
   --cdp-url "ws://localhost:9222/devtools/browser/..." \
   --allowlist "localhost,example.com" \
@@ -59,19 +56,21 @@ The domain firewall operates at the **protocol level** — below the browser eng
 The typical workflow for a coding agent using the `browse` CLI:
 
 ```bash
-# 1. Create a protected session (one command)
+# 1. Create a Browserbase session
+SESSION_ID=$(bb sessions create --body '{"projectId":"...","keepAlive":true}' | jq -r .id)
+
+# 2. Attach the firewall (runs in background)
 node skills/domain-firewall/scripts/domain-firewall.mjs \
-  --create \
+  --session-id $SESSION_ID \
   --allowlist "docs.stripe.com,stripe.com" \
   --default deny &
-# → prints session ID to stdout, e.g. 083988e1-91db-417a-a205-a9edcf8e11e7
 
-# 2. Browse normally — firewall is transparent
-browse open https://docs.stripe.com --session-id <id>
+# 3. Browse normally — firewall is transparent
+browse open https://docs.stripe.com --session-id $SESSION_ID
 browse snapshot
 # ... agent works normally ...
 
-# 3. If the agent or page tries to navigate to an unlisted domain → BLOCKED
+# 4. If the agent or page tries to navigate to an unlisted domain → BLOCKED
 #    Firewall logs the decision to stderr in real-time:
 #    [14:30:05] BLOCKED  evil.com  (default)
 ```
@@ -82,25 +81,21 @@ browse snapshot
 domain-firewall.mjs — Protect a browser session with domain policies
 
 Usage:
-  node domain-firewall.mjs --create --allowlist "example.com" [options]
   node domain-firewall.mjs --session-id <id> [options]
   node domain-firewall.mjs --cdp-url <ws://...> [options]
 
 Options:
-  --create               Create a new Browserbase session with firewall
-  --project-id <id>      Project ID for --create (or BROWSERBASE_PROJECT_ID)
-  --session-id <id>      Attach to an existing Browserbase session
+  --session-id <id>      Browserbase session ID
   --cdp-url <url>        Direct CDP WebSocket URL (local Chrome)
   --allowlist <domains>  Comma-separated allowed domains
   --denylist <domains>   Comma-separated denied domains
   --default <verdict>    Default verdict: allow or deny (default: deny)
   --quiet                Suppress per-request logging
   --json                 Log events as JSON lines
-  --help                 Show help
+  --help                 Show this help
 
 Environment:
-  BROWSERBASE_API_KEY    Required when using --create or --session-id
-  BROWSERBASE_PROJECT_ID Used by --create if --project-id not specified
+  BROWSERBASE_API_KEY    Required when using --session-id
 ```
 
 ### Getting the CDP URL
