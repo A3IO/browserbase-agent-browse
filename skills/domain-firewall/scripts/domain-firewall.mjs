@@ -42,10 +42,10 @@ function parseArgs() {
         opts.cdpUrl = args[++i];
         break;
       case "--allowlist":
-        opts.allowlist = args[++i].split(",").map((d) => normalizeDomain(d.trim()));
+        opts.allowlist = args[++i].split(",").map((d) => normalizeDomain(d.trim())).filter(Boolean);
         break;
       case "--denylist":
-        opts.denylist = args[++i].split(",").map((d) => normalizeDomain(d.trim()));
+        opts.denylist = args[++i].split(",").map((d) => normalizeDomain(d.trim())).filter(Boolean);
         break;
       case "--default":
         opts.defaultVerdict = args[++i];
