@@ -111,15 +111,28 @@ function ts() {
 // Policy evaluation
 // =============================================================================
 
+function domainMatches(domain, entries) {
+  for (const entry of entries) {
+    if (entry.startsWith("*.")) {
+      // Wildcard: *.stripe.com matches docs.stripe.com, api.stripe.com
+      if (domain.endsWith(entry.slice(1))) return true;
+    } else {
+      // Exact: stripe.com matches stripe.com only
+      if (domain === entry) return true;
+    }
+  }
+  return false;
+}
+
 function evaluate(domain, opts) {
   // Denylist takes priority
-  if (opts.denylist.length > 0 && opts.denylist.includes(domain)) {
+  if (opts.denylist.length > 0 && domainMatches(domain, opts.denylist)) {
     return { action: "BLOCKED", policy: "denylist" };
   }
 
   // If allowlist is specified, only listed domains pass
   if (opts.allowlist.length > 0) {
-    if (opts.allowlist.includes(domain)) {
+    if (domainMatches(domain, opts.allowlist)) {
       return { action: "ALLOWED", policy: "allowlist" };
     }
     // Not on allowlist → use default

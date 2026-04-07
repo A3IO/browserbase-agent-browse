@@ -204,7 +204,7 @@ cat firewall.log | jq 'select(.action == "BLOCKED")'
 
 1. **Start the firewall before browsing** — run `domain-firewall.mjs` before the first `browse open` so all navigations are intercepted from the start.
 2. **Include your starting URL's domain** — the allowlist must include the domain you navigate to first, otherwise it will be blocked.
-3. **Include subdomains explicitly in `--allowlist`** — `stripe.com` and `docs.stripe.com` are separate domains. The CLI does exact domain matching, so list each subdomain: `--allowlist "stripe.com,docs.stripe.com,api.stripe.com"`. For glob/wildcard matching (e.g. `*.stripe.com`), use the TypeScript API's `pattern()` policy.
+3. **Use wildcards for subdomains** — `stripe.com` and `docs.stripe.com` are separate domains. Use `--allowlist "stripe.com,*.stripe.com"` to allow the base domain and all subdomains. The `*` prefix matches any subdomain (e.g. `*.stripe.com` matches `docs.stripe.com`, `api.stripe.com`). Note that `*.stripe.com` does NOT match `stripe.com` itself — include both if you need the base domain.
 4. **Denylist takes priority** — a domain on both the denylist and allowlist will be denied.
 5. **Use `--json` for programmatic analysis** — pipe to `jq` or save to a file for post-session review.
 6. **Use `--default deny` for high-security tasks** — only explicitly allowed domains pass through. This is the default.

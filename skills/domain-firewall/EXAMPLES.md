@@ -8,7 +8,7 @@
 
 ```bash
 node domain-firewall.mjs --session-id $SID \
-  --allowlist "chase.com,secure.chase.com,auth.chase.com" \
+  --allowlist "chase.com,*.chase.com" \
   --default deny
 ```
 
@@ -205,6 +205,6 @@ await installDomainFirewall(page, {
 ## Tips
 
 - **The common thread**: every use case involves an agent with access to sensitive credentials or data, browsing pages it doesn't fully control. One CLI command scopes the blast radius.
-- **Include subdomains explicitly**: The CLI does exact domain matching — `--allowlist "chase.com"` does NOT match `secure.chase.com`. List each subdomain: `--allowlist "chase.com,secure.chase.com,auth.chase.com"`. For glob/wildcard matching, use the TypeScript API's `pattern()` policy.
+- **Use wildcards for subdomains**: `--allowlist "chase.com"` does NOT match `secure.chase.com`. Use `--allowlist "chase.com,*.chase.com"` to cover the base domain and all subdomains.
 - **Denylist + allowlist together**: denylist is checked first. Use this to block specific bad actors within an otherwise-allowed set.
 - **`--json` for compliance**: pipe to a file for post-session audit trails that prove the agent stayed within authorized domains.
