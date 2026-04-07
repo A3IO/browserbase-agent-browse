@@ -100,7 +100,7 @@ Environment:
 // =============================================================================
 
 function normalizeDomain(hostname) {
-  return hostname.toLowerCase().replace(/^www\./, "");
+  return hostname.toLowerCase();
 }
 
 function ts() {
