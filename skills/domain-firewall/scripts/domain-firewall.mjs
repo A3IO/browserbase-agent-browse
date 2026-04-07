@@ -162,17 +162,9 @@ function getCDPUrl(sessionId) {
     });
     const data = JSON.parse(raw.trim());
 
-    // Prefer page-level target (required for Fetch interception)
-    if (data.pages && data.pages[0]?.debuggerUrl) {
-      const debugUrl = data.pages[0].debuggerUrl;
-      // Extract wss:// URL from the inspector URL query param
-      const match = debugUrl.match(/wss=([^&?]+)/);
-      if (match) {
-        return "wss://" + match[1];
-      }
-    }
-
-    // Fallback to browser-level target
+    // Prefer browser-level target — the auto-attach logic in main()
+    // handles page attachment, and connecting at browser level avoids
+    // blocking other CDP clients (browse CLI, Stagehand) from the page
     if (data.wsUrl) return data.wsUrl;
 
     throw new Error("No CDP URL found in debug response");
