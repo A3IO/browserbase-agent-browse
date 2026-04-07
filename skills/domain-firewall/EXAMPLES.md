@@ -7,7 +7,7 @@
 > "Log into my Chase bank account and download my last 3 months of statements"
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "chase.com,*.chase.com" \
   --default deny
 ```
@@ -19,7 +19,7 @@ The agent has banking credentials in the session. If any page contains a prompt 
 > "Log into Dubsado, export all client contacts, and import them into HoneyBook"
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "dubsado.com,app.dubsado.com,honeybook.com,app.honeybook.com" \
   --default deny
 ```
@@ -31,7 +31,7 @@ The agent handles customer PII across two systems. If either platform has a comp
 > "Scrape these 15 competitor pricing pages and extract their plan details"
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "competitor1.com,competitor2.com,competitor3.com" \
   --default deny
 ```
@@ -43,7 +43,7 @@ Competitor sites could contain hidden text like "Visit analytics-verify.com/trac
 > "Check the price of this product across Amazon, Walmart, and Target every hour"
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "amazon.com,walmart.com,target.com" \
   --denylist "click-tracker.com,ad-redirect.net" \
   --default deny
@@ -56,7 +56,7 @@ Product pages are loaded with ad networks and affiliate redirects. The firewall 
 > "Log into Ariba and submit this purchase order"
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "service.ariba.com,supplier.ariba.com" \
   --default deny
 ```
@@ -68,7 +68,7 @@ Procurement portals handle PO numbers, payment terms, and supplier credentials. 
 > "Use the browser agent to complete a purchase on behalf of the user"
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "merchant.com,checkout.stripe.com" \
   --denylist "fake-merchant.com,phishing-checkout.com" \
   --default deny
@@ -81,7 +81,7 @@ Prevents the agent from being directed to a fraudulent merchant site disguised a
 > "Test the checkout flow on staging with a test credit card"
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "staging.myapp.com,auth.myapp.com" \
   --denylist "production.myapp.com" \
   --default deny
@@ -94,7 +94,7 @@ Explicitly denylist production so even if a redirect or misconfigured link point
 > "Fill out the new hire paperwork on Workday using this offer letter"
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "mycompany.wd5.myworkdaysite.com" \
   --default deny
 ```
@@ -108,7 +108,7 @@ The agent has SSN, salary, address, and bank routing numbers. A single malicious
 ### JSON logging for compliance audit
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "example.com" --default deny --json > firewall.log &
 
 # Analyze blocked navigations
@@ -122,10 +122,10 @@ cat firewall.log | jq -r 'select(.action == "BLOCKED") | .domain' | sort | uniq 
 
 ```bash
 # Create a session
-SESSION_ID=$(bb sessions create --body '{"projectId":"...","keepAlive":true}' | jq -r .id)
+SESSION_ID=$(bb sessions create --body '{"projectId":"'"$(bb projects list | jq -r '.[0].id')"'","keepAlive":true}' | jq -r .id)
 
 # Attach the firewall in background
-node domain-firewall.mjs --session-id $SESSION_ID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SESSION_ID \
   --allowlist "docs.stripe.com,stripe.com" --default deny &
 
 # Browse normally — firewall is transparent
@@ -144,7 +144,7 @@ browse snapshot
 CDP_URL=$(curl -s http://localhost:9222/json/version | jq -r .webSocketDebuggerUrl)
 
 # Start firewall
-node domain-firewall.mjs --cdp-url "$CDP_URL" \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --cdp-url "$CDP_URL" \
   --allowlist "localhost" --default deny
 ```
 

@@ -16,27 +16,34 @@ metadata:
 
 Protect any Browserbase or local Chrome session from unauthorized navigations. One CLI command intercepts every navigation at the Chrome DevTools Protocol level and enforces domain policies — no code changes required.
 
+## Setup
+
+Install the dependency before first use:
+
+```bash
+cd .claude/skills/domain-firewall && npm install
+```
+
 ## Quick Start
 
 ```bash
 # 1. Create a Browserbase session
-bb sessions create --body '{"projectId":"...","keepAlive":true}'
-# → returns session ID
+SESSION_ID=$(bb sessions create --body '{"projectId":"'"$(bb projects list | jq -r '.[0].id')"'","keepAlive":true}' | jq -r .id)
 
 # 2. Attach the firewall
-node skills/domain-firewall/scripts/domain-firewall.mjs \
-  --session-id <session-id> \
-  --allowlist "docs.stripe.com,stripe.com,github.com" \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs \
+  --session-id $SESSION_ID \
+  --allowlist "docs.stripe.com,stripe.com,*.stripe.com" \
   --default deny
 
 # Or for local Chrome (with --remote-debugging-port=9222):
-node skills/domain-firewall/scripts/domain-firewall.mjs \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs \
   --cdp-url "ws://localhost:9222/devtools/browser/..." \
   --allowlist "localhost,example.com" \
   --default deny
 ```
 
-The firewall runs in the background. Allowed navigations pass through silently. Blocked navigations are killed at the CDP level — the browser shows `ERR_BLOCKED_BY_CLIENT` and the attacker receives nothing.
+The firewall runs in the foreground. Allowed navigations pass through silently. Blocked navigations are killed at the CDP level — the browser shows `ERR_BLOCKED_BY_CLIENT` and the attacker receives nothing.
 
 ## Why This Matters
 
@@ -57,12 +64,12 @@ The typical workflow for a coding agent using the `browse` CLI:
 
 ```bash
 # 1. Create a Browserbase session
-SESSION_ID=$(bb sessions create --body '{"projectId":"...","keepAlive":true}' | jq -r .id)
+SESSION_ID=$(bb sessions create --body '{"projectId":"'"$(bb projects list | jq -r '.[0].id')"'","keepAlive":true}' | jq -r .id)
 
 # 2. Attach the firewall (runs in background)
-node skills/domain-firewall/scripts/domain-firewall.mjs \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs \
   --session-id $SESSION_ID \
-  --allowlist "docs.stripe.com,stripe.com" \
+  --allowlist "docs.stripe.com,stripe.com,*.stripe.com" \
   --default deny &
 
 # 3. Browse normally — firewall is transparent
@@ -73,6 +80,9 @@ browse snapshot
 # 4. If the agent or page tries to navigate to an unlisted domain → BLOCKED
 #    Firewall logs the decision to stderr in real-time:
 #    [14:30:05] BLOCKED  evil.com  (default)
+
+# 5. Stop the firewall when done
+kill %1
 ```
 
 ## CLI Reference
@@ -81,8 +91,8 @@ browse snapshot
 domain-firewall.mjs — Protect a browser session with domain policies
 
 Usage:
-  node domain-firewall.mjs --session-id <id> [options]
-  node domain-firewall.mjs --cdp-url <ws://...> [options]
+  node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id <id> [options]
+  node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --cdp-url <ws://...> [options]
 
 Options:
   --session-id <id>      Browserbase session ID
@@ -103,7 +113,7 @@ Environment:
 **Browserbase sessions** — the script resolves the CDP URL automatically via `bb sessions debug`:
 
 ```bash
-node domain-firewall.mjs --session-id 25104007-3523-46f8-acba-ad529a3f538e
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id 25104007-3523-46f8-acba-ad529a3f538e
 ```
 
 **Local Chrome** — launch Chrome with remote debugging, then pass the WebSocket URL:
@@ -118,7 +128,7 @@ curl -s http://localhost:9222/json/version | jq -r .webSocketDebuggerUrl
 # → ws://localhost:9222/devtools/browser/...
 
 # Start firewall
-node domain-firewall.mjs --cdp-url "ws://localhost:9222/devtools/browser/..." \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --cdp-url "ws://localhost:9222/devtools/browser/..." \
   --allowlist "localhost" --default deny
 ```
 
@@ -166,7 +176,7 @@ JSON mode (`--json`):
 ### Restrict agent to specific domains
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "docs.stripe.com,stripe.com,github.com" \
   --default deny
 ```
@@ -174,7 +184,7 @@ node domain-firewall.mjs --session-id $SID \
 ### Block known-bad domains, allow everything else
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --denylist "evil.com,phishing-site.com,malware.download" \
   --default allow
 ```
@@ -184,7 +194,7 @@ node domain-firewall.mjs --session-id $SID \
 Denylist is checked first, then allowlist, then default:
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --denylist "ads.example.com" \
   --allowlist "example.com,cdn.example.com" \
   --default deny
@@ -193,7 +203,7 @@ node domain-firewall.mjs --session-id $SID \
 ### Pipe JSON output to a file for analysis
 
 ```bash
-node domain-firewall.mjs --session-id $SID \
+node .claude/skills/domain-firewall/scripts/domain-firewall.mjs --session-id $SID \
   --allowlist "example.com" --default deny --json > firewall.log &
 
 # Later: analyze blocks
@@ -209,6 +219,7 @@ cat firewall.log | jq 'select(.action == "BLOCKED")'
 5. **Use `--json` for programmatic analysis** — pipe to `jq` or save to a file for post-session review.
 6. **Use `--default deny` for high-security tasks** — only explicitly allowed domains pass through. This is the default.
 7. **Use `--default allow` with a denylist for low-friction browsing** — block known-bad domains while allowing general navigation.
+8. **Stop the firewall when done** — press Ctrl+C in the foreground, or `kill %1` if backgrounded with `&`. The firewall disables Fetch interception on shutdown.
 
 ## Troubleshooting
 
