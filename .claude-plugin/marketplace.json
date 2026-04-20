@@ -23,36 +23,6 @@
       "skills": [
         "./skills/browser"
       ]
-    },
-    {
-      "name": "functions",
-      "source": "./",
-      "description": "Deploy serverless browser automation to the cloud using Browserbase Functions. Use when the user wants to deploy automation to run on a schedule, needs a webhook endpoint for browser automation, wants to run automation in the cloud instead of locally, or asks about Browserbase Functions.",
-      "version": "0.0.1",
-      "author": {
-        "name": "Browserbase"
-      },
-      "category": "automation",
-      "keywords": ["serverless", "functions", "deployment", "cloud", "webhook", "scheduled-automation"],
-      "strict": false,
-      "skills": [
-        "./skills/functions"
-      ]
-    },
-    {
-      "name": "browserbase-cli",
-      "source": "./",
-      "description": "Use the Browserbase CLI (`bb`) for Browserbase Functions and platform API workflows. Use when the user asks to run `bb`, deploy or invoke functions, manage sessions, projects, contexts, or extensions, fetch a page through the Browserbase Fetch API, or open the Browserbase dashboard from the command line.",
-      "version": "0.0.1",
-      "author": {
-        "name": "Browserbase"
-      },
-      "category": "automation",
-      "keywords": ["browserbase", "cli", "bb", "functions", "sessions", "fetch"],
-      "strict": false,
-      "skills": [
-        "./skills/browserbase-cli"
-      ]
     }
   ]
 }
